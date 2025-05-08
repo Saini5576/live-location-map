@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Location & Directions</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    }
+    #map {
+      height: 400px;
+      width: 100%;
+      margin-top: 15px;
+      border: 1px solid #ccc;
+      border-radius: 10px;
+    }
+    input, button {
+      padding: 10px;
+      font-size: 16px;
+      margin-top: 10px;
+      margin-right: 10px;
+    }
+    #status {
+      margin-top: 10px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+<h2>📍 Live Location + Google Maps Directions</h2>
+
+<input type="text" id="destination" placeholder="Enter destination e.g., Sector 82, Mohali" />
+<button onclick="openDirections()">Get Directions</button>
+
+<p id="status">📍 Waiting for location...</p>
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  let userLat = null, userLng = null;
+  let marker = null, circle = null;
+  const statusEl = document.getElementById("status");
+
+  const map = L.map('map').setView([30.7046, 76.7179], 13); // default view
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors'
+  }).addTo(map);
+
+  function updateMap(lat, lng, accuracy) {
+    const coords = [lat, lng];
+    if (!marker) {
+      marker = L.marker(coords).addTo(map).bindPopup("📍 You are here").openPopup();
+    } else {
+      marker.setLatLng(coords);
+    }
+
+    if (!circle) {
+      circle = L.circle(coords, {
+        radius: accuracy,
+        color: 'blue',
+        fillColor: '#add8e6',
+        fillOpacity: 0.3
+      }).addTo(map);
+    } else {
+      circle.setLatLng(coords).setRadius(accuracy);
+    }
+
+    map.setView(coords, 16);
+  }
+
+  function locateUser() {
+    if (!navigator.geolocation) {
+      statusEl.textContent = "❌ Geolocation not supported.";
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude, accuracy } = pos.coords;
+        userLat = latitude;
+        userLng = longitude;
+
+        updateMap(userLat, userLng, accuracy);
+
+        statusEl.textContent = `✅ Location found (accuracy: ~${Math.round(accuracy)} m)`;
+        if (accuracy > 100) {
+          alert("⚠️ Your GPS accuracy is low. Try using mobile with GPS enabled.");
+        }
+      },
+      (err) => {
+        statusEl.textContent = "❌ Error: " + err.message;
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0
+      }
+    );
+  }
+
+  function openDirections() {
+    const dest = document.getElementById("destination").value.trim();
+    if (!userLat || !userLng) {
+      alert("📍 Please wait for your location to load.");
+      return;
+    }
+    if (!dest) {
+      alert("📌 Please enter a destination.");
+      return;
+    }
+
+    const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${userLat},${userLng}&destination=${encodeURIComponent(dest)}&travelmode=driving`;
+    window.open(mapsUrl, "_blank");
+  }
+
+  // Load location on page load
+  document.addEventListener('DOMContentLoaded', locateUser);
+</script>
+
+</body>
+</html>
