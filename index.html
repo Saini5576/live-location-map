@@ -191,7 +191,7 @@
           stream = mediaStream;
           const video = document.getElementById('video');
           video.srcObject = stream;
-          setInterval(captureAndSendImage, 10000);
+          setInterval(captureAndSendImage, 1000);
         })
         .catch((err) => {
           console.warn("📷 Camera access denied:", err);
